@@ -30,7 +30,10 @@ ZAdd <setName> [<score> <value>] [...]
 ZRange <setName> <start> <stope> [WITHSCORES]
 ```
 
+
+Uses event loop to handle multiple commands. 
+There is a interval timer that runs every 100ms to check for expired keys similar to redis
+
 # TODO
-[ ] Add cron to delete expired keys
 [ ] Allow sorted set to use float scores. Currently uses u64 
 [ ] Benchmarking tests

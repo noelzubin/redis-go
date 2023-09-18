@@ -4,16 +4,18 @@ import (
 	"fmt"
 	"net"
 	"noelzubin/redis-go/eventloop"
+	"noelzubin/redis-go/set"
 	"noelzubin/redis-go/store"
 	"os"
 )
 
 func main() {
-	store := store.InitStore()
+	expiredSet := set.InitStringSet()
+	store := store.InitStore(expiredSet)
 	el := eventloop.InitEventloop(store)
 
 	// Main Event loop
-	go el.RunLoop()
+	el.Start()
 
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {

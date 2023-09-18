@@ -16,126 +16,149 @@ import (
 var OK = "OK"
 
 type Eventloop struct {
-	reqChan chan ReqCommand
+	reqChan chan interface{}
 	store   store.Store
 }
 
 func InitEventloop(store store.Store) *Eventloop {
 	return &Eventloop{
 		store:   store,
-		reqChan: make(chan ReqCommand),
+		reqChan: make(chan interface{}),
 	}
 }
 
+func (e *Eventloop) StartCleanUpTimer() {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	for {
+		<-ticker.C
+		reqCmd := CleanUp{}
+		e.reqChan <- reqCmd
+	}
+}
+
+func (el *Eventloop) Start() {
+	go el.RunLoop()
+	go el.StartCleanUpTimer()
+}
+
 func (e *Eventloop) RunLoop() {
-	fmt.Println("loop started")
-	for cmd := range e.reqChan {
+	for loopCmd := range e.reqChan {
 		var resp protocol.Value
-		switch strings.ToLower(cmd.command[0]) {
-		case "ping":
-			r := e.store.Ping()
-			resp = protocol.NewSimpleStringValue(r)
-		case "set":
+		switch cmd := loopCmd.(type) {
 
-			if len(cmd.command) < 3 {
-				resp = protocol.NewErrorValue("ERR wrong number of arguments for 'set' command")
-				break
-			}
+		// interval cleanup
+		case CleanUp:
+			e.store.CleanUp()
+			continue
 
-			var exp *time.Time = nil
-			if len(cmd.command) > 3 {
-				if seconds, err := strconv.Atoi(cmd.command[3]); err == nil {
-					expiry := time.Now().Add(time.Duration(seconds) * time.Second)
-					exp = &expiry
-				}
-			}
+		// handle user commands
+		case ReqCommand:
+			switch strings.ToLower(cmd.command[0]) {
+			case "ping":
+				r := e.store.Ping()
+				resp = protocol.NewSimpleStringValue(r)
+			case "set":
 
-			e.store.Set(cmd.command[1], cmd.command[2], exp)
-			resp = protocol.NewSimpleStringValue(&OK)
-
-		case "get":
-			if (len(cmd.command)) < 2 {
-				resp = protocol.NewErrorValue("ERR wrong number of arguments for 'set' command")
-				break
-			}
-			r := e.store.Get(cmd.command[1])
-			if r == nil {
-				resp = protocol.NewNilValue()
-				break
-			}
-			resp = protocol.NewSimpleStringValue(r)
-		case "del":
-			if len(cmd.command) < 2 {
-				resp = protocol.NewErrorValue("ERR wrong number of arguments for 'del' command")
-				break
-			}
-
-			r := e.store.Del(cmd.command[1:]...)
-			resp = protocol.NewSimpleIntValue(int64(r))
-		case "expire":
-			if len(cmd.command) < 3 {
-				resp = protocol.NewErrorValue("ERR wrong number of arguments for 'del' command")
-				break
-			}
-
-			seconds, err := strconv.Atoi(cmd.command[2])
-			if err != nil {
-				resp = protocol.NewErrorValue("ERR value is not an integer or out of range")
-				break
-			}
-
-			r := e.store.Expire(cmd.command[1], seconds)
-			resp = protocol.NewSimpleIntValue(int64(r))
-		case "keys":
-			r := e.store.Keys("")
-			resp = protocol.NewArrayStringValue(r)
-		case "zadd":
-
-			if (len(cmd.command))%2 != 0 || len(cmd.command) < 4 {
-				resp = protocol.NewErrorValue("ERR wrong number of arguments for 'zadd' command")
-				break
-			}
-			scoreMembers, err := utils.GetScoreMemberPairs(cmd.command[2:])
-			if err != nil {
-				resp = protocol.NewErrorValue("ERR syntax error")
-				break
-			}
-			r := e.store.ZAdd(cmd.command[1], scoreMembers)
-			resp = protocol.NewSimpleIntValue(int64(r))
-		case "zrange":
-			if len(cmd.command) < 4 {
-				resp = protocol.NewErrorValue("ERR wrong number of arguments for 'zrange' command")
-				break
-			}
-
-			fmt.Println(cmd.command)
-
-			start, err := strconv.Atoi(cmd.command[2])
-			if err != nil {
-				resp = protocol.NewErrorValue("ERR value is not an integer or out of range")
-				break
-			}
-
-			end, err := strconv.Atoi(cmd.command[3])
-			if err != nil {
-				resp = protocol.NewErrorValue("ERR value is not an integer or out of range")
-				break
-			}
-
-			withScores := false
-			for _, v := range cmd.command {
-				if strings.ToLower(v) == "withscores" {
-					withScores = true
+				if len(cmd.command) < 3 {
+					resp = protocol.NewErrorValue("ERR wrong number of arguments for 'set' command")
 					break
 				}
-			}
 
-			r := e.store.ZRange(cmd.command[1], start, end, withScores)
-			resp = protocol.NewArrayStringValue(r)
-		default:
-			resp = protocol.NewErrorValue("unknown command '" + cmd.command[0] + "'")
+				var exp *time.Time = nil
+				if len(cmd.command) > 3 {
+					if seconds, err := strconv.Atoi(cmd.command[3]); err == nil {
+						expiry := time.Now().Add(time.Duration(seconds) * time.Second)
+						exp = &expiry
+					}
+				}
+
+				e.store.Set(cmd.command[1], cmd.command[2], exp)
+				resp = protocol.NewSimpleStringValue(&OK)
+
+			case "get":
+				if (len(cmd.command)) < 2 {
+					resp = protocol.NewErrorValue("ERR wrong number of arguments for 'set' command")
+					break
+				}
+				r := e.store.Get(cmd.command[1])
+				if r == nil {
+					resp = protocol.NewNilValue()
+					break
+				}
+				resp = protocol.NewSimpleStringValue(r)
+			case "del":
+				if len(cmd.command) < 2 {
+					resp = protocol.NewErrorValue("ERR wrong number of arguments for 'del' command")
+					break
+				}
+
+				r := e.store.Del(cmd.command[1:]...)
+				resp = protocol.NewSimpleIntValue(int64(r))
+			case "expire":
+				if len(cmd.command) < 3 {
+					resp = protocol.NewErrorValue("ERR wrong number of arguments for 'del' command")
+					break
+				}
+
+				seconds, err := strconv.Atoi(cmd.command[2])
+				if err != nil {
+					resp = protocol.NewErrorValue("ERR value is not an integer or out of range")
+					break
+				}
+
+				r := e.store.Expire(cmd.command[1], seconds)
+				resp = protocol.NewSimpleIntValue(int64(r))
+			case "keys":
+				r := e.store.Keys("")
+				resp = protocol.NewArrayStringValue(r)
+			case "zadd":
+
+				if (len(cmd.command))%2 != 0 || len(cmd.command) < 4 {
+					resp = protocol.NewErrorValue("ERR wrong number of arguments for 'zadd' command")
+					break
+				}
+				scoreMembers, err := utils.GetScoreMemberPairs(cmd.command[2:])
+				if err != nil {
+					resp = protocol.NewErrorValue("ERR syntax error")
+					break
+				}
+				r := e.store.ZAdd(cmd.command[1], scoreMembers)
+				resp = protocol.NewSimpleIntValue(int64(r))
+			case "zrange":
+				if len(cmd.command) < 4 {
+					resp = protocol.NewErrorValue("ERR wrong number of arguments for 'zrange' command")
+					break
+				}
+
+				fmt.Println(cmd.command)
+
+				start, err := strconv.Atoi(cmd.command[2])
+				if err != nil {
+					resp = protocol.NewErrorValue("ERR value is not an integer or out of range")
+					break
+				}
+
+				end, err := strconv.Atoi(cmd.command[3])
+				if err != nil {
+					resp = protocol.NewErrorValue("ERR value is not an integer or out of range")
+					break
+				}
+
+				withScores := false
+				for _, v := range cmd.command {
+					if strings.ToLower(v) == "withscores" {
+						withScores = true
+						break
+					}
+				}
+
+				r := e.store.ZRange(cmd.command[1], start, end, withScores)
+				resp = protocol.NewArrayStringValue(r)
+			default:
+				resp = protocol.NewErrorValue("unknown command '" + cmd.command[0] + "'")
+			}
+			cmd.respChan <- resp
 		}
-		cmd.respChan <- resp
 	}
 }
 
@@ -143,6 +166,8 @@ type ReqCommand struct {
 	command  []string
 	respChan chan protocol.Value
 }
+
+type CleanUp struct{}
 
 func (e *Eventloop) HandleConnection(conn io.ReadWriteCloser) {
 	defer conn.Close()

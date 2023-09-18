@@ -15,6 +15,11 @@ type Store struct {
 	mock.Mock
 }
 
+// CleanUp provides a mock function with given fields:
+func (_m *Store) CleanUp() {
+	_m.Called()
+}
+
 // Del provides a mock function with given fields: keys
 func (_m *Store) Del(keys ...string) int {
 	_va := make([]interface{}, len(keys))

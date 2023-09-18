@@ -31,4 +31,6 @@ type Store interface {
 	ZAdd(k string, s []ScoreMember) int
 	// ZRange returns a range of members from a sorted set
 	ZRange(k string, start int, stop int, withScores bool) []string
+	// Cleanup tries to cleanup expired keys
+	CleanUp()
 }
